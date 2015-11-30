@@ -6,10 +6,10 @@
 int MINIMUMULTRA = 50;
 int MINIMUMIR = 300;
 int initial_prob[2] = { 0.5, 0.5};
-int obstacle_given[2] = { 0.7, 0.4};
-int ir_given_obstacle[2] = { 0.9, 0.2 };
-int us_given_obstacle[2] = { 0.8, 0.2 };
-int utility[2] = { 10, -20 };
+int obstacle_given[2] = { 0.5, 0.5};
+int ir_given_obstacle[2] = { 0.9, 0.1 };
+int us_given_obstacle[2] = { 0.8, 0.1 };
+int utility[2] = { 10, -12 };
 
 float l_g[1][21] = {{0.1640, 0.1790, 0.1752, 0.1455, 0.0865, 0, -0.1056, -0.2159, -0.3131, -0.3800, -0.4038, -0.3800,
                     -0.3131, -0.2159, -0.1056, 0, 0.0865, 0.1455, 0.1752, 0.1790, 0.1640
@@ -100,8 +100,8 @@ void turn_off_motor(){
 }
 
 void calibration(){
-  int ultrasonic_reading = analogRead(ultrasonic_pin);
-  int infrared_reading = analogRead(r_i_pin);
+  int ultrasonic_reading = sequence_sensors(ultrasonic_pin, 9, 5);
+  int infrared_reading = sequence_sensors(r_i_pin, 9, 5);
   MINIMUMULTRA = ultrasonic_reading;
   MINIMUMIR = infrared_reading;
 
@@ -126,7 +126,7 @@ void check_sensors() {
   }else{
     turn_off_motor();
   }
-  //state = foot_in_air;
+  state = foot_in_air;
 }
 
 int test_accelerometer(){
@@ -147,26 +147,17 @@ int test_accelerometer(){
 
 void foot_in_air() {
   if(millis() - sample_time > SAMPLERATE){
-    int accelerometer_signalX = analogRead(accelerometer_pinX);
-    int accelerometer_signalY = analogRead(accelerometer_pinY);
-    int accelerometer_signalZ = analogRead(accelerometer_pinZ);
+    int accelerometer_signalX = sequence_sensors(accelerometer_pinX, 9, 5);
+    int accelerometer_signalY = sequence_sensors(accelerometer_pinY, 9, 5);
+    int accelerometer_signalZ = sequence_sensors(accelerometer_pinZ, 9, 5);
     sample_time = millis();
     if(millis() - time_already_vibrating > TIMEVIBRATING)
       turn_off_motor();
-    /*Serial.print(accelerometer_signalX);
-    Serial.print(" ");
-    Serial.print(accelerometer_signalY);
-    Serial.print(" ");
-    Serial.print(accelerometer_signalZ);
-    Serial.println();*/
-    //Serial.println(accelerometer_signalX + accelerometer_signalY + accelerometer_signalZ);
     list->insert(accelerometer_signalX + accelerometer_signalY + accelerometer_signalZ);
     //list->insert(accelerometer_signalX + accelerometer_signalY + accelerometer_signalZ);
     if(test_accelerometer()){
-      //state = check_sensors;
-       digitalWrite(led_Pin, HIGH);
+      state = check_sensors;
     }
-    digitalWrite(led_Pin, LOW);
     accelerometer_previousX = accelerometer_signalX;
     accelerometer_previousY = accelerometer_signalY;
     accelerometer_previousZ = accelerometer_signalZ;
