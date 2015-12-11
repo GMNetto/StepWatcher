@@ -1,15 +1,18 @@
+#define SAMPLERATE 2
 #define TIMEVIBRATING 1000
 #define MONITORINGRATE 10
 
+int TIMEOUT = 5000;
 int previous_ultrasonic = 110000;
 int MINIMUMULTRA = 50;
-int MINIMUMIR = 300;
+int MINIMUMIR = 0;
 float initial_prob[2] = { 0.5, 0.5};
 float obstacle_given[2] = { 0.5, 0.5};
+float ir_given_obstacle[2] = { 0.85, 0.1 };
 float us_given_obstacle[2] = { 0.9, 0.1 };
 int utility[2] = { 11, -10 };
 
-int just_detected = 0;
+int moved = 0;
 
 int pyramid_elements[2] = {1, 21};
 int pyramid_length = 1;
@@ -18,10 +21,12 @@ int *buffer_accelerometer;
 int previous_us = 0;
 
 const int ir_max = 1000, us_max = 1000;
-const int ir_min = 30, us_min = 30;
+const int ir_min = 0, us_min = 30;
 
-long monitoring_time = 0, time_already_vibrating = 0;
+long sample_time = 0, monitoring_time = 0;
+long time_already_vibrating = 0;
 
+int ir_threshold = 300;
 const int r_i_pin = A5;
 const int ultrasonic_pin = A3;
 const int motor_pin = 7;
@@ -30,9 +35,14 @@ int led_Pin = 5;
 
 int problem_monitoring = 0;
 
+int just_detected = 0;
+
 int called_and_detected_check_sensor = 0;
 
+void foot_on_ground();
 void (*state)() = foot_in_air;
+
+long step_time = 0;
 
 int was_detected = 0;
 
@@ -92,8 +102,9 @@ void calibration() {
   int ultrasonic_reading = sequence_sensors(ultrasonic_pin, 9, 5);
   int infrared_reading = sequence_sensors(r_i_pin, 9, 5);
   MINIMUMULTRA = ultrasonic_reading;
-  MINIMUMIR = infrared_reading;
-  just_detected = 1;
+  ir_threshold = infrared_reading;
+
+  just_detected = 0;
 
 }
 
@@ -107,16 +118,25 @@ int sequence_sensors(int pin, int buffer_size, int number_readings) {
 
 void check_sensors() {
   int ultrasonic_reading = sequence_sensors(ultrasonic_pin, 11, 5);
+  //Serial.print(ultrasonic_reading);
+  //Serial.print(" ");
+  //Serial.println(MINIMUMULTRA);
   int us_result = ultrasonic_reading < MINIMUMULTRA;
-  if (is_obstacle(us_result, us_given_obstacle)  && !called_and_detected_check_sensor) {
+  Serial.println(us_result);
+  if (is_obstacle(us_result, us_given_obstacle)  && !just_detected) {
+  //if (us_result&&!just_detected) {
+    Serial.println("ok");
     turn_on_motor();
     time_already_vibrating = millis();
     was_detected = 1;
     previous_ultrasonic = ultrasonic_reading;
     called_and_detected_check_sensor = 1;
+
+    just_detected = 1;
   } else {
     initial_prob[0] = 0.5;
     initial_prob[1] = 0.5;
+    Serial.println("EORKEFE");
     called_and_detected_check_sensor = 0;
   }
   state = foot_in_air;
@@ -128,20 +148,33 @@ void check_change() {
     turn_on_motor();
     time_already_vibrating = millis();
     was_detected = 1;
+    just_detected = 1;
   }
+
+
+
+  //int previous_us = ultrasonic_reading;
+  //state = foot_in_air;
 }
 
 //Gather all the code and test monitoring,
 void foot_in_air() {
   int no_previous = 0;
+  //Serial.println(was_detected);
   if ((millis() - time_already_vibrating > TIMEVIBRATING ) && was_detected) {
     turn_off_motor();
     was_detected = 0;
+    Serial.println("turnof");
   }
 
   int ir_reading = sequence_sensors(r_i_pin, 9, 5);
-  if (ir_reading > MINIMUMIR - 10) {
+  if (ir_reading > ir_threshold - 30) {
     state = check_sensors;
+    digitalWrite(led_Pin, HIGH);
+  }else{
+    digitalWrite(led_Pin, LOW);
+    just_detected = 0;
+    Serial.println("sdjfsidjoi");
   }
 }
 
@@ -203,6 +236,9 @@ void setup() {
 
 void loop() {
   monitoring();
-  if (!problem_monitoring)
+  if (!problem_monitoring){
     state();
+    //turn_off_motor();
+  }//else turn_on_motor();
 }
+
