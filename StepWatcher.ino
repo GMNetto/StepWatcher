@@ -1,30 +1,25 @@
-#define SAMPLERATE 2
 #define TIMEVIBRATING 1000
 #define MONITORINGRATE 10
 
-int TIMEOUT = 5000;
 int previous_ultrasonic = 110000;
 int MINIMUMULTRA = 50;
 int MINIMUMIR = 0;
+
+//Probabilities and utility used in the Bayesian Filter function
 float initial_prob[2] = { 0.5, 0.5};
 float obstacle_given[2] = { 0.5, 0.5};
-float ir_given_obstacle[2] = { 0.85, 0.1 };
 float us_given_obstacle[2] = { 0.9, 0.1 };
 int utility[2] = { 11, -10 };
-
-int moved = 0;
 
 int pyramid_elements[2] = {1, 21};
 int pyramid_length = 1;
 int *buffer_accelerometer;
 
-int previous_us = 0;
-
+//Parameters monitoring function compare
 const int ir_max = 1000, us_max = 1000;
 const int ir_min = 0, us_min = 30;
 
-long sample_time = 0, monitoring_time = 0;
-long time_already_vibrating = 0;
+long monitoring_time = 0, time_already_vibrating = 0;
 
 int ir_threshold = 300;
 const int r_i_pin = A5;
@@ -33,19 +28,15 @@ const int motor_pin = 7;
 const int calibration_button = 3;
 int led_Pin = 5;
 
+//Flags using in the program
 int problem_monitoring = 0;
-
 int just_detected = 0;
-
+int was_detected = 0;
 int called_and_detected_check_sensor = 0;
 
-void foot_on_ground();
 void (*state)() = foot_in_air;
 
-long step_time = 0;
-
-int was_detected = 0;
-
+//A heap was used to store in a almost ordered way the last N values, it returns the average of the median values
 class Heap {
   private:
     int *vector, size_v = 0, last_pos_available = 1;
@@ -71,7 +62,7 @@ class Heap {
     };
 
     ~Heap() {
-      free(vector);
+      delete vector;
     }
 
     void insert(int value) {
@@ -80,6 +71,8 @@ class Heap {
       last_pos_available++;
     };
 
+    //Considering the size N it returns the avererage of the n values, ignoring the extremes.
+    //Because it is a binary heap it garantees removing the max and min values only if ignores multiples of 2.
     int get_average_n_mid(int n) {
       int i, accumulator = 0, begin = int((size_v - n) / 2) + 1;
       for (i = begin; i < n + begin; i++) {
@@ -98,16 +91,16 @@ void turn_off_motor() {
   digitalWrite(motor_pin, LOW);;
 }
 
+//Interrupt that calibrates the sensors, storing the value read int the threshold.
 void calibration() {
   int ultrasonic_reading = sequence_sensors(ultrasonic_pin, 9, 5);
   int infrared_reading = sequence_sensors(r_i_pin, 9, 5);
   MINIMUMULTRA = ultrasonic_reading;
   ir_threshold = infrared_reading;
-
   just_detected = 0;
-
 }
 
+//Return  the average of the values with O(n) complexity.
 int sequence_sensors(int pin, int buffer_size, int number_readings) {
   Heap heap(buffer_size);
   for (int i = 0; i < buffer_size; i++) {
@@ -116,68 +109,44 @@ int sequence_sensors(int pin, int buffer_size, int number_readings) {
   return heap.get_average_n_mid(number_readings);
 }
 
+//state that takes the measuremt filtered of the ultrasonic and uses a simple Bayes filter to decide if it was an obstacle,
+//if not assumes that both can happen with same chance(it forgot the past measuremts).
 void check_sensors() {
   int ultrasonic_reading = sequence_sensors(ultrasonic_pin, 11, 5);
-  //Serial.print(ultrasonic_reading);
-  //Serial.print(" ");
-  //Serial.println(MINIMUMULTRA);
   int us_result = ultrasonic_reading < MINIMUMULTRA;
   Serial.println(us_result);
   if (is_obstacle(us_result, us_given_obstacle)  && !just_detected) {
-  //if (us_result&&!just_detected) {
-    Serial.println("ok");
     turn_on_motor();
     time_already_vibrating = millis();
     was_detected = 1;
     previous_ultrasonic = ultrasonic_reading;
     called_and_detected_check_sensor = 1;
-
     just_detected = 1;
   } else {
     initial_prob[0] = 0.5;
     initial_prob[1] = 0.5;
-    Serial.println("EORKEFE");
     called_and_detected_check_sensor = 0;
   }
   state = foot_in_air;
 }
 
-void check_change() {
-  int ultrasonic_reading = sequence_sensors(ultrasonic_pin, 11, 5);
-  if (abs(previous_us - ultrasonic_reading) > 200 ) {
-    turn_on_motor();
-    time_already_vibrating = millis();
-    was_detected = 1;
-    just_detected = 1;
-  }
-
-
-
-  //int previous_us = ultrasonic_reading;
-  //state = foot_in_air;
-}
-
-//Gather all the code and test monitoring,
+//Take the distance and compare with the threshold to define the position of the sensor. I also checks the timeout of the motor.
 void foot_in_air() {
   int no_previous = 0;
-  //Serial.println(was_detected);
   if ((millis() - time_already_vibrating > TIMEVIBRATING ) && was_detected) {
     turn_off_motor();
     was_detected = 0;
-    Serial.println("turnof");
   }
 
   int ir_reading = sequence_sensors(r_i_pin, 9, 5);
   if (ir_reading > ir_threshold - 30) {
     state = check_sensors;
-    digitalWrite(led_Pin, HIGH);
   }else{
-    digitalWrite(led_Pin, LOW);
     just_detected = 0;
-    Serial.println("sdjfsidjoi");
   }
 }
 
+//Check if both sensors are conected correctly. If no information is received, the signal goes to almost 0(there is a resistor linking to ground).
 int monitoring() {
   if (millis() - monitoring_time > MONITORINGRATE) {
     monitoring_time = millis();
@@ -195,6 +164,8 @@ int monitoring() {
   }
 }
 
+//The bayes filter wass used to include uncertaints coming from the sensor, and to give a chance to define how "important" is
+//a true positive vs false positive of the sensor(currently the sensor is biased to be conservative, more positives).
 int is_obstacle(int value_ultrasonic, float* weights) {
   float accumulator_prob[2];
   int i;
@@ -208,6 +179,7 @@ int is_obstacle(int value_ultrasonic, float* weights) {
   float sum = probability_prediction[0] + probability_prediction[1];
   probability_prediction[0] /= sum;
   probability_prediction[1] /= sum;
+  //Avoid problems with 0 and 1 that were keeping the same valeus.
   if (probability_prediction[0] == 1 && probability_prediction[1] == 0) {
     initial_prob[0] = 0.99;
     initial_prob[1] = 0.01;
@@ -238,7 +210,6 @@ void loop() {
   monitoring();
   if (!problem_monitoring){
     state();
-    //turn_off_motor();
-  }//else turn_on_motor();
+  }
 }
 
